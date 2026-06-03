@@ -16,6 +16,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: withastro/action@v3
+        with:
+          # Astro 5 needs Node 22.12+, runner defaults to 20
+          node-version: 22
 
   deploy:
     needs: build

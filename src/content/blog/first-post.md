@@ -25,22 +25,150 @@ graph TD
 ```
 
 ```csharp 
+using System;
+using System.Collections;
 using PX.Data;
-using PX.Data.BQL;
+using PX.Data.Descriptor;
+using PX.Objects.CA;
+using PX.Objects.Common;
+using PX.Objects.GL;
+using PX.Objects.EP.Standalone;
+using PX.Objects.CR;
+using PX.Objects.CS;
+using PX.SM;
 
-using PX.Objects.TX;
 
-namespace PX.Objects.EP.MAKLTHEONET001
+namespace PX.Objects.AP
 {
-    public class MAKLEPSetupExt : PXCacheExtension<EPSetup>
-    {
-        
-        [PXDBString(TaxCategory.taxCategoryID.Length, IsUnicode = true)]
-        [PXUIField(DisplayName = "Non-Taxable Category", Visibility = PXUIVisibility.Visible)]
-        [PXSelector(typeof(TaxCategory.taxCategoryID), DescriptionField = typeof(TaxCategory.descr))]
-        [PXRestrictor(typeof(Where<TaxCategory.active, Equal<True>>), TX.Messages.InactiveTaxCategory, typeof(TaxCategory.taxCategoryID))]
-        public virtual string UsrTaxCategoryID { get; set; }
-        public abstract class usrTaxCategoryID : BqlString.Field<usrTaxCategoryID> { }
-    }
+	public class VendorClassMaint : PXGraph<VendorClassMaint>
+	{
+		[InjectDependency]
+		internal IBAccountRestrictionHelper BAccountRestrictionHelper { get; set; }
+
+
+		#region Buttons Declaration
+		public PXSave<VendorClass> Save;
+		[PXCancelButton]
+		[PXUIField(MapEnableRights = PXCacheRights.Select)]
+		protected virtual System.Collections.IEnumerable Cancel(PXAdapter a)
+		{
+			foreach (PXResult<VendorClass, EPEmployeeClass> e in (new PXCancel<VendorClass>(this, "Cancel")).Press(a))
+			{
+				if (VendorClassRecord.Cache.GetStatus((VendorClass)e) == PXEntryStatus.Inserted)
+				{
+					EPEmployeeClass e1 = PXSelect<EPEmployeeClass, Where<EPEmployeeClass.vendorClassID, Equal<Required<EPEmployeeClass.vendorClassID>>>>.Select(this, ((VendorClass)e).VendorClassID);
+					if (e1 != null)
+					{
+						VendorClassRecord.Cache.RaiseExceptionHandling<VendorClass.vendorClassID>((VendorClass)e, ((VendorClass)e).VendorClassID, new PXSetPropertyException(Messages.EmployeeClassExists));
+					}
+				}
+				yield return e;
+			}
+		}
+
+		public PXAction<VendorClass> cancel;
+		public PXInsert<VendorClass> Insert;
+		public PXCopyPasteAction<VendorClass> Edit; 
+		public PXDelete<VendorClass> Delete;
+		public PXFirst<VendorClass> First;
+		public PXPrevious<VendorClass> Prev;
+		public PXNext<VendorClass> Next;
+		public PXLast<VendorClass> Last;
+		#endregion
+
+
+		public PXSelectJoin<VendorClass, LeftJoin<EPEmployeeClass, On<EPEmployeeClass.vendorClassID, Equal<VendorClass.vendorClassID>>>, Where<EPEmployeeClass.vendorClassID, IsNull>> VendorClassRecord;
+		public PXSelect<VendorClass, Where<VendorClass.vendorClassID, Equal<Current<VendorClass.vendorClassID>>>> CurVendorClassRecord;
+		[PXViewName(CR.Messages.Attributes)]
+        public CSAttributeGroupList<VendorClass, Vendor> Mapping;
+
+		public CRClassNotificationSourceList<VendorClass.vendorClassID, APNotificationSource.vendor> NotificationSources;
+
+		public PXSelect<NotificationRecipient,
+			Where<NotificationRecipient.refNoteID, IsNull,
+				And<NotificationRecipient.sourceID, Equal<Optional<NotificationSource.sourceID>>>>> NotificationRecipients;
+
+		public PXSelect<Vendor,
+			Where<Vendor.vendorClassID, Equal<Current<VendorClass.vendorClassID>>>> Vendors;
+
+		public PXAction<VendorClass> resetGroup;
+
+		#region Cache Attached
+
+		#region NotificationSource
+
+		[PXSelector(typeof(Search<NotificationSetup.setupID,
+			Where<NotificationSetup.sourceCD, Equal<APNotificationSource.vendor>>>),
+			DescriptionField = typeof(NotificationSetup.notificationCD),
+			SelectorMode = PXSelectorMode.DisplayModeText | PXSelectorMode.NoAutocomplete)]
+		[PXMergeAttributes(Method = MergeMethod.Merge)]
+		protected virtual void NotificationSource_SetupID_CacheAttached(PXCache sender)
+		{
+		}
+
+		[PXDefault(typeof(VendorClass.vendorClassID))]
+		[PXParent(typeof(Select2<VendorClass,
+			InnerJoin<NotificationSetup, 
+      On<NotificationSetup.setupID, Equal<Current<NotificationSource.setupID>>>>,
+			Where<VendorClass.vendorClassID, Equal<Current<NotificationSource.classID>>>>))]
+		[PXMergeAttributes(Method = MergeMethod.Merge)]
+		protected virtual void NotificationSource_ClassID_CacheAttached(PXCache sender)
+		{
+		}
+
+		[PXSelector(typeof(Search<SiteMap.screenID,
+				Where2<Where<SiteMap.url, Like<Common.urlReports>,
+						Or<SiteMap.url, Like<urlReportsInNewUi>>>,
+				And<Where<SiteMap.screenID, Like<PXModule.ap_>,
+							 Or<SiteMap.screenID, Like<PXModule.po_>,
+							 Or<SiteMap.screenID, Like<PXModule.sc_>, 
+							 Or<SiteMap.screenID, Like<PXModule.cl_>,
+							 Or<SiteMap.screenID, Like<PXModule.rq_>>>>>>>>,
+			OrderBy<Asc<SiteMap.screenID>>>), typeof(SiteMap.screenID), typeof(SiteMap.title),
+			Headers = new string[] { CA.Messages.ReportID, CA.Messages.ReportName },
+			DescriptionField = typeof(SiteMap.title))]
+		[PXMergeAttributes(Method = MergeMethod.Merge)]
+		protected virtual void NotificationSource_ReportID_CacheAttached(PXCache sender)
+		{
+		}
+
+		#endregion
+
+#region NotificationRecipient
+
+[PXDefault]
+[VendorContactType.ClassList]
+[PXCheckDistinct(typeof(NotificationRecipient.contactID),
+    Where = typeof(Where<NotificationRecipient.refNoteID, IsNull, 
+                     And<NotificationRecipient.sourceID, 
+                         Equal<Current<NotificationRecipient.sourceID>>>>))]
+[PXMergeAttributes(Method = MergeMethod.Merge)]
+protected virtual void NotificationRecipient_ContactType_CacheAttached(PXCache sender)
+{		
 }
+
+#endregion
+
+#endregion
+
+public PXMenuAction<VendorClass> ActionsMenu;
+
+[PXProcessButton(IsLockedOnToolbar = true)]
+[PXUIField(DisplayName = "Include Vendors in Restriction Group")]
+protected virtual IEnumerable ResetGroup(PXAdapter adapter)
+{
+  if (VendorClassRecord.Ask(Messages.Warning, 
+                            Messages.GroupUpdateConfirm, 
+                            MessageButtons.OKCancel) == WebDialogResult.OK)
+  {
+    Save.Press();
+    string classID = VendorClassRecord.Current.VendorClassID;
+    PXLongOperation.StartOperation(this, delegate()
+    {
+      Reset(classID);
+    });
+  }
+  return adapter.Get();
+}
+
 ```
